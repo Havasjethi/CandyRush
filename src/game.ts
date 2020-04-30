@@ -181,6 +181,8 @@ interface IAnimationService {
   _iterval: null;
   _animationInProgress: boolean;
 
+  clearAnimations(): void;
+
   getProgramTime(): number;
   getAnimationTime(): number;
   isAnimationInProgress(): boolean
@@ -225,6 +227,15 @@ const animationService : IAnimationService = {
       animation,
       finished: false
     });
+  },
+
+  clearAnimations() {
+    this._animationQueue_v2.splice(0);
+    this._animationInProgress = false;
+
+    this._programTime += 10;
+    this._animationTime = this._programTime;
+    
   },
 
   animate_v2() {
@@ -441,18 +452,14 @@ interface TopListScore {
     difficulty: string;
 }
 
-const lvlEndPopUp = (lvlScore: number, score: number, uname: string = '') => {
+const lvlEndPopUp = (score: number, uname: string = '') => {
     const onFinish = () => {
         //@ts-ignore
         let uname = nameInput.val().toString();
-        
+
         if (uname == '') {
             uname = 'anonym hero'
         };
-
-        if (lvl.id > highest_completed_level) {
-            highest_completed_level = lvl.id;
-        }
 
         // Save username for later usage
         username = uname;
@@ -480,38 +487,37 @@ const lvlEndPopUp = (lvlScore: number, score: number, uname: string = '') => {
         popup.remove();
     };
 
-
     const popup = $('<div class="popup"></div>');
     const upper = $('<div class="upper"></div>');
-    let msg = score >= lvlScore ? 'Level Compleated' : 'U are a faailure!Better luck nextime';
+    let msg = score >= lvl.score ? 'Level Compleated' : 'U are a faailure!Better luck nextime';
     
     upper.append($(`<div>${msg}</div>`));
     const buttons = $('<div class="buttons"></div>');
-    
     let again = $('<button>Again</button>');
     again.on('click', () => {
         onFinish();
-        restart();
+        lvlService.restart();
     });
 
     let nextLvl = $('<button>Next</button>');
     nextLvl.on('click', () => {
         onFinish();
-        setupMap(lvl.id + 1);
+        lvlService.setupMap(lvl.id + 1);
     });
 
     let retry = $('<button>Try again</button>');
     retry.on('click', () => {
         onFinish();
-        restart();
+        lvlService.restart();
     });
 
-    if (lvlScore > score) {
-        upper.append($(`<div>Goal: ${lvlScore} got: <span>${score}</span></div>`));
+    if (lvl.score > score) {
+        upper.append($(`<div>Goal: ${lvl.score} got: <span>${score}</span></div>`));
         buttons.append(retry);
     } else {
         upper.append($(`<div>Score: <span>${score}</span></div>`));
         buttons.append(again, nextLvl);
+        lvlService.levelCompleted();
     }
 
     const r = $('<div></div>');
@@ -546,38 +552,16 @@ const difficultyService = {
         $(`#${diff}`).addClass('active');
 
         this.currentDifficulty = diff;
-        
-        clearCandies();
-        fillTiles();
-        scoreService.resetScore();
-        stepService.reset();
     },
+
     changeDifficulty(diff: string) {
         if (stepService._maxSteps != stepService._steps) {
-            const onClick = () => {
-                popup.remove();
+            let doit = {
+                text: 'I said do it!!',
+                onClick: () => this.setupDifficulty(diff)
             };
 
-            let popup = $('<div class="popup"></div>')
-            let info = $('<div class="info"></div>')
-            let buttons = $('<div class="btns"></div>')
-
-            let p1 = $('<p>You are in the middle of a game, if you switch now your progress will be lost. </p>');
-            let p2 = $('<p>Are you sure you wanna switch now?</p>');
-            let cancel = $('<button>Nah, it\'s fine later</button>');
-            let doit = $('<button>I said do it!!</button>');
-
-            info.append(p1, p2);
-            buttons.append(cancel, doit);
-            popup.append(info, buttons);
-
-            cancel.on('click', () => onClick());
-            doit.on('click', () => {
-                this.setupDifficulty(diff);
-                onClick();
-            });
-            
-            popup.appendTo($('body'));
+            lvlService.changeDurringGame([doit]);
         }
         else {
             this.setupDifficulty(diff);
@@ -585,13 +569,260 @@ const difficultyService = {
     }
 }
 
+type Levels = Level[];
+const levels: Levels = [
+    {
+        id: 1,
+        n: 8,
+        m: 6,
+        steps: 4,
+        score: 1000
+    },
+    {
+        id: 2,
+        n: 9,
+        m: 10,
+        steps: 5,
+        score: 3000
+    },
+    {
+        id: 3,
+        n: 6,
+        m: 8,
+        steps: 10,
+        score: 4000
+    },
+    {
+        id: 4,
+        n: 10,
+        m: 10,
+        steps: 15,
+        score: 6000
+    },
+    {
+        id: 5,
+        n: 20,
+        m: 15,
+        steps: 10,
+        score: 40000
+    },
+];
+
+let lvl: Level;
+
 const lvlService = {
     prev_btn: $(''),
     next_btn: $(''),
+    highest_completed: 0,
+    // lvl: levels[0], // Actual Level
+    
 
     init() {
-        this.prev_btn = $('#aaaa');
-        this.next_btn = $('#aaaa');
+        this.prev_btn = $('#previous-lvl');
+        this.next_btn = $('#next-lvl');
+
+        this.prev_btn.on('click', () => {
+            if (stepService._steps != stepService._maxSteps) {
+                this.changeDurringGame([{
+                    text: 'Change Level NOW!!',
+                    onClick: () => this.setupMap(lvl.id - 1)
+                }])
+            } else {
+                this.setupMap(lvl.id - 1);
+            }
+        });
+
+        this.next_btn.on('click', () => {
+            if (stepService._steps != stepService._maxSteps) {
+                this.changeDurringGame([{
+                    text: 'Change Level NOW!!',
+                    onClick: () => this.setupMap(lvl.id + 1)
+                }])
+            } else {
+                this.setupMap(lvl.id + 1);
+            }
+        });
+
+        // this.lvl = levels[0]; 
+    },
+
+    levelCompleted() {
+        this.highest_completed = lvl.id > this.highest_completed ? lvl.id : this.highest_completed; 
+    },
+
+    mapSwitcherButtonUpdater() {
+        if (this.highest_completed >= lvl.id) {
+            this.next_btn.show();
+        } else {
+            this.next_btn.hide();
+        }
+
+        if (lvl.id > levels.reduce((a, b) => a.id < b.id ? a : b).id) {
+            this.prev_btn.show();
+        } else {
+            this.prev_btn.hide();
+        }
+
+    },
+
+    /**
+     * 
+     * @param actionButtons Every button except the cancel ;
+     */
+    changeDurringGame(actionButtons: {text: string, onClick:() => void}[]) {
+        const onClick = () => {
+            popup.remove();
+        };
+        
+        let popup = $('<div class="popup"></div>')
+        let info = $('<div class="info"></div>')
+        let button_section = $('<div class="btns"></div>')
+        
+        let p1 = $('<p>You are in the middle of a game, if you switch now your progress will be lost. </p>');
+        let p2 = $('<p>Are you sure you wanna switch now?</p>');
+        
+        let buttons = [];
+        
+        actionButtons.forEach(e => {
+            let btn = $(`<button>${e.text}</button>`);
+            btn.on('click', () => {
+                e.onClick();
+                onClick();
+            });
+
+            buttons.push(btn);
+        });
+
+        let cancel = $('<button>Nah, it\'s fine later</button>');
+        cancel.on('click', () => onClick());
+
+        buttons.unshift(cancel);
+
+        info.append(p1, p2);
+        button_section.append(...buttons);
+        popup.append(info, button_section);
+        
+        popup.appendTo($('body'));
+    },
+
+    clearCandies() {
+        game_area.children().each((_, element)=> {
+            if (element.classList.contains('candy')){
+                element.remove()
+            }
+        });
+    
+        candies_structured.splice(0);
+    },
+
+    restart(){
+        stepService.reset();
+        scoreService.resetScore();
+        scoreService.resetMultiplyer();
+        animationService.clearAnimations();
+        
+        this.mapSwitcherButtonUpdater();
+        this.clearCandies();
+        this.fillTiles();
+    },
+    
+    setupMap(mapId: number){
+    
+        // for new map gen // Always needed
+        clearCurrentMap();
+    
+        // If new map gen
+        //@ts-ignore
+        lvl = levels.find(e => e.id == mapId);
+        $('#mapId').text(lvl.id);
+        $('#goal-score').text(lvl.score);
+    
+        tile_size = game_area_height / lvl.m;
+        candy_size = tile_size * candy_to_tile;
+        
+    
+        this.generateTiles(lvl.n, lvl.m);
+        generateObstacles();
+    
+        // Before start
+        this.fillTiles();
+        scoreService.resetScore();
+        stepService.setStartSteps(lvl.steps);
+        this.mapSwitcherButtonUpdater();
+    },
+    
+    fillTiles() {
+        for(let x = 0; x != tiles_structured.length; x++) {
+            
+            let col: Candy[] = [];
+            for(let y = 0; y != tiles_structured[x].length; y++) {
+                if (tiles_structured[x][y].type == tile_types.void) { continue; }
+                const tile = tiles_structured[x][y];
+                let candy: Candy;
+                
+                if (tile.type == tile_types.void) {
+                    candy = {
+                        type: candy_types.void,
+                        pos: {x,y},
+                        //@ts-ignore
+                        html: null
+                    };
+                } else {
+    
+                    let current = Math.floor(Math.random() * activeCandies);
+                    if (y >= 2 && 
+                        col[y-1].type == candy_types.formNumber(current) && 
+                        col[y-2].type == candy_types.formNumber(current)) {
+                        current = (current+1) % activeCandies; 
+                    }
+                    
+                    if (x >= 2 &&
+                        candies_structured[x-1][y].type == candy_types.formNumber(current) &&
+                        candies_structured[x-2][y].type == candy_types.formNumber(current)) {
+                        current = (current+1) % activeCandies; 
+                    }
+    
+                    candy = generateCandy({x,y}, false, candy_types.formNumber(current));
+    
+                    game_area.append(candy.html);
+                }
+    
+                col.push(candy);
+            }
+    
+            candies_structured.push(col);
+        }
+    },
+    
+    generateTiles(n: number, m: number) {
+        for (let x = 0; x != n; x++) {
+            let col = [];
+            for (let y = 0; y != m; y++) {
+                let html_tile = $('<div class="tile"></div>');
+    
+                html_tile.css({
+                    height: tile_size,
+                    width: tile_size,
+                    top: tile_size * y,
+                    left: tile_size * x, 
+                });
+                
+                let tile: Tile = {
+                    pos: {x, y},
+                    type: tile_types.normal,
+                    html: html_tile
+                };
+    
+                // html_tile.on('click', (e) => console.log(tile));
+    
+                add_mouse_envets(tile);
+    
+                tile.html.appendTo(game_area);
+                col.push(tile);
+                tiles.push(tile);
+            }
+            tiles_structured.push([...col]);
+        }
     }
 }
 
@@ -660,7 +891,6 @@ const direction = {
 }
 
 
-type Levels = Level[];
 
 let game_area: JQuery<HTMLElement>;
 let game_area_height: number;
@@ -689,66 +919,15 @@ let refill_active = false;
 let username = '';
 let highest_completed_level = 0;
 
-const levels: Levels = [
-    {
-        id: 1,
-        n: 8,
-        m: 6,
-        steps: 4,
-        score: 1000
-    },
-    {
-        id: 2,
-        n: 9,
-        m: 10,
-        steps: 5,
-        score: 3000
-    },
-    {
-        id: 3,
-        n: 6,
-        m: 8,
-        steps: 10,
-        score: 4000
-    },
-    {
-        id: 4,
-        n: 10,
-        m: 10,
-        steps: 15,
-        score: 6000
-    },
-    {
-        id: 5,
-        n: 20,
-        m: 15,
-        steps: 10,
-        score: 40000
-    },
-];
+
 
 let scores: {[mapId: number]: TopListScore[]} = {};
- 
-
-let lvl: Level;
-// Actual Level
 
 let tile_size: number;
 let candy_size: number;
 // Candy to Tile ration 
 let candy_to_tile =  4 / 5;
 let fall_animation_time = 400; 
-
-
-// let animation_round = 0;
-
-// let currentQueue = [];
-// let stuff = 0;
-
-// const interval = setTimeout(() => {
-//     if ()
-
-// }, 100);
 
 const generateCandy = (pos: Pos, fall: boolean = false, type?: string): Candy =>  {
     let html = $('<div class="candy"></div>');
@@ -780,7 +959,6 @@ const generateCandy = (pos: Pos, fall: boolean = false, type?: string): Candy =>
 };
 
 const add_mouse_envets = (element:HtmlLinked) => {
-    // element.html.on('click', () => console.log(element))
     element.html.on('mouseover', () => mouseOver(element.pos))
     element.html.on('mousedown', () => mouseDown(element.pos))
 };
@@ -804,17 +982,16 @@ $(() => {
     scoreService.subscribeScoreChange((score: number) => $('#score').text(score));
     stepService.subscribeStepChange((steps: number) => $('#left-moves').text(steps));
     stepService.subscribeOnZeroSteps(() => {
-        animationService.subscribeTimeEqulibrium(() => lvlEndPopUp(lvl.score, scoreService.getScore(), username), 1);
+        animationService.subscribeTimeEqulibrium(() => lvlEndPopUp(scoreService.getScore(), username), 1);
     });
-
-    // game_area_width = window.innerWidth * 7 / 10;
-    // generateSideBar();
 
     setupDifficultyHandling();
 
 
     animationService.subscribeTimeEqulibrium(() => ableToMove = true);
-    setupMap(levels.reduce((a,b)=> a.id < b.id ? a : b).id);
+    
+    lvlService.init();
+    lvlService.setupMap(levels.reduce((a,b)=> a.id < b.id ? a : b).id);
     topListService.init();
 
     soundService.init();
@@ -839,128 +1016,11 @@ const clearCurrentMap = () => {
     candies_structured.splice(0);
 };
 
-const clearCandies = () => {
-    game_area.children().each((_, element)=> {
-        if (element.classList.contains('candy')){
-            element.remove()
-        }
-    });
-
-    candies_structured.splice(0);
-};
-
 const generateObstacles = () => {
 
 };
 
-const restart = () => {
-    stepService.reset();
-    scoreService.resetScore();
-    scoreService.resetMultiplyer();
-    
-    clearCandies();
-    fillTiles();
-};
 
-const setupMap = (mapId: number) => {
-
-
-    // for new map gen // Always needed
-    clearCurrentMap();
-
-
-    // If new map gen
-    //@ts-ignore
-    lvl = levels.find(e => e.id == mapId);
-    $('#mapId').text(lvl.id);
-    $('#goal-score').text(lvl.score);
-
-    tile_size = game_area_height / lvl.m;
-    candy_size = tile_size * candy_to_tile;
-    
-
-    generateTiles(lvl.n, lvl.m);
-    generateObstacles();
-
-    // Before start
-    fillTiles();
-    scoreService.resetScore();
-    stepService.setStartSteps(lvl.steps);    
-};
-
-const fillTiles = () => {
-    for(let x = 0; x != tiles_structured.length; x++) {
-        
-        let col: Candy[] = [];
-        for(let y = 0; y != tiles_structured[x].length; y++) {
-            if (tiles_structured[x][y].type == tile_types.void) { continue; }
-            const tile = tiles_structured[x][y];
-            let candy: Candy;
-            
-            if (tile.type == tile_types.void) {
-                candy = {
-                    type: candy_types.void,
-                    pos: {x,y},
-                    //@ts-ignore
-                    html: null
-                };
-            } else {
-
-                let current = Math.floor(Math.random() * activeCandies);
-                if (y >= 2 && 
-                    col[y-1].type == candy_types.formNumber(current) && 
-                    col[y-2].type == candy_types.formNumber(current)) {
-                    current = (current+1) % activeCandies; 
-                }
-                
-                if (x >= 2 &&
-                    candies_structured[x-1][y].type == candy_types.formNumber(current) &&
-                    candies_structured[x-2][y].type == candy_types.formNumber(current)) {
-                    current = (current+1) % activeCandies; 
-                }
-
-                candy = generateCandy({x,y}, false, candy_types.formNumber(current));
-
-                game_area.append(candy.html);
-            }
-
-            col.push(candy);
-        }
-
-        candies_structured.push(col);
-    }
-}
-
-const generateTiles = (n: number, m: number) => {
-    for (let x = 0; x != n; x++) {
-        let col = [];
-        for (let y = 0; y != m; y++) {
-            let html_tile = $('<div class="tile"></div>');
-
-            html_tile.css({
-                height: tile_size,
-                width: tile_size,
-                top: tile_size * y,
-                left: tile_size * x, 
-            });
-            
-            let tile: Tile = {
-                pos: {x, y},
-                type: tile_types.normal,
-                html: html_tile
-            };
-
-            // html_tile.on('click', (e) => console.log(tile));
-
-            add_mouse_envets(tile);
-
-            tile.html.appendTo(game_area);
-            col.push(tile);
-            tiles.push(tile);
-        }
-        tiles_structured.push([...col]);
-    }
-}
 
 const mouseDown = (pos: Pos) => {
     selected_tile = tiles_structured[pos.x][pos.y];
