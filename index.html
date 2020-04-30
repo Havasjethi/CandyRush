@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Candy Rush</title>
+    <script src="../jquery-3.4.1.min.js"></script>
+    <script src="./src/game_v1.js"></script>
+    <link rel="stylesheet" href="style.css"/>
+</head>
+
+<body>
+
+    <div class="game">
+
+        <div class="sidebar">
+
+            <div class="upper">
+
+                <div class="section">
+                    Map: <span id="mapId"></span>
+                    <button id="next-lvl">Next</button>
+                    <button id="previous-lvl">Previous</button>
+                </div>
+
+                <div class="section">
+
+                    Moves: <span id="left-moves"></span>
+                </div>
+
+                <div class="section">
+
+                    Goal: <span id="goal-score"></span>
+                </div>
+
+                <div class="section">
+
+                    Score: <span id="score"></span>
+                </div>
+
+                <div class="music">
+                    <button id="background">Music <span></span></button>
+                    <button id="effects">Effects <span></span></button>
+                    <button id="startbackgroundMuscik">start Musick <span></span></button>
+                </div>
+                
+                <div class="difficulty">
+                    <button id="easy">Easy</button>
+                    <button id="medium">Medium</button>
+                    <button id="hard">Hard</button>
+                </div>
+
+            </div>
+
+            <div class="toplist">
+
+                <div class="flex">
+
+                    <button id="prev-score" class="arrow">&lt;-</button>
+                    
+                    <h4>Scores</h4>
+
+                    <button id="next-score" class="arrow">-&gt;</button>
+
+                </div>
+
+                <div class="flex">
+                    <div>Level: </div>
+                    <div id="displayed-level-scores"></div>
+                </div>
+
+                <ol id="toplist-scores">
+                </ol>
+            
+            </div>
+        </div>
+
+
+
+        <div id="game-area"></div>
+
+    </div>
+
+</body>
+</html>
