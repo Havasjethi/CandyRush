@@ -948,7 +948,6 @@ const setupDifficultyHandling = () => {
     $('#medium').on('click', () => difficultyService.changeDifficulty(difficulties.medium));
     $('#hard').on('click', () => difficultyService.changeDifficulty(difficulties.hard));
 
-    difficultyService.setupDifficulty(difficulties.medium);
 }
 
 $(() => {
