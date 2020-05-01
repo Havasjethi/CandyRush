@@ -48,6 +48,26 @@ const tile_types = {
     void: "void",
 }
 
+const candy_image = {
+    _base: './assets/',
+    _end: '_candy.png',
+    purple: new Image(),
+    green: new Image(),
+    yellow: new Image(),
+    red: new Image(),
+    blue: new Image(),
+
+    special: new Image(),
+    loadImages() {
+        this.purple = new Image(this._base + candy_types.purple + this._end);
+        this.green = new Image(this._base + candy_types.green + this._end);
+        this.yellow = new Image(this._base + candy_types.yellow + this._end);
+        this.red = new Image(this._base + candy_types.red + this._end);
+        this.blue = new Image(this._base + candy_types.blue + this._end);
+        this.special = new Image(this._base + candy_types.special + this._end);
+    },
+};
+
 const candy_types = {
     purple,
     green,
@@ -910,12 +930,13 @@ const get_candy_form_tile = (tile: Tile) => {
 };
 
 const generateCandy = (pos: Pos, fall: boolean = false, type?: string): Candy =>  {
-    let html = $('<div class="candy"></div>');
+    let html = $('<img class="candy"></img>');
     let candy: Candy = {
         html,
         pos: pos ? pos : {x: -1, y: -1}, // pos ?? {x: -1, y: -1},
         type: type ? type : candy_types.randomType(), // type ?? candy_types.randomType(),
     };
+    html.attr('src', candy_image['candy.type'])
 
     html.addClass(candy.type);
 
@@ -953,6 +974,7 @@ const setupDifficultyHandling = () => {
 $(() => {
     game_area = $('#game-area');
     game_area_height = parseInt(game_area.css('height'));
+    candy_image.loadImages();
 
     levels.forEach(e => scores[e.id] = []); 
 
