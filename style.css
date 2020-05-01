@@ -17,10 +17,10 @@ div.difficulty > .active {
     margin: 40px auto;
     width: 500px;
     height: 500px;
-    background-color: hotpink;
-    right: -10vw;
+    background-color: antiquewhite;
+    right: -20vw;
 
-    border: solid gray 2px;
+    /* border: solid gray 2px; */
 }
 
 
@@ -29,8 +29,7 @@ div.difficulty > .active {
     background-color: antiquewhite;
     margin: 30px auto;
     border: 4px solid teal;
-    border-radius: 20px;
-    
+    border-radius: 20px;    
 }
 
 .sidebar {

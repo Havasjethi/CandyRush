@@ -1,3 +1,101 @@
+let game_area: JQuery<HTMLElement>;
+let game_area_height: number;
+
+let left_start;
+let top_start;
+
+let tiles: Tile[] = [];
+let tiles_structured: Tile[][] = [];
+let candies_structured: Candy[][] = [];
+const d_num = 3;
+const sepcial_mark = 4;
+
+let selected_tile: Tile | null = null; 
+let is_tile_selected = false;
+let mouse_is_down = true;
+let ableToMove = true;
+
+let refill_active = false;
+let username = '';
+let highest_completed_level = 0;
+
+let scores: {[mapId: number]: TopListScore[]} = {};
+
+let tile_size: number;
+let candy_size: number;
+
+// Candy to Tile ration 
+let candy_to_tile =  4 / 5;
+let fall_animation_time = 400; 
+
+const difficulties = {
+    medium: 'medium',
+    easy: 'easy',
+    hard: 'hard',
+};
+
+const purple = 'purple';
+const green = 'green';
+const yellow = 'yellow';
+const red = 'red';
+const blue = 'blue';
+const special = 'special';
+
+let activeCandies: number = 4;
+
+const tile_types = {
+    normal: "normal",
+    void: "void",
+}
+
+const candy_types = {
+    purple,
+    green,
+    yellow,
+    red,
+    blue,
+
+    special,
+    void: "void",
+
+    formNumber: (n: number): string => {
+        switch (n){
+            case 0: return candy_types.purple;
+            case 1: return candy_types.yellow;
+            case 2: return candy_types.red;
+            case 3: return candy_types.green;
+            case 4: return candy_types.blue;
+            default: return "Error";
+        }
+    },
+    randomType(): string {
+        return this.formNumber(Math.floor(Math.random() * activeCandies));
+    }
+};
+
+const direction = {
+    left: 0,
+    right: 1,
+    up: 2,
+    down: 3,
+    getDirection(x1: number, x2: number, y1: number, y2: number): number {
+        return x1 == x2 ? (y2 > y1 ? this.down : this.up)  
+                        : (x2 > x1 ? this.right : this.left);
+    },
+    fromVector(x: number, y: number): number {
+        return x == 0 ? ( y > 0 ? this.down : this.up )
+                      : ( x > 0 ? this.right : this.left );
+    },
+    getReverse(direct: number): number {
+        switch (direct){
+            case (this.right): return this.left; 
+            case (this.left): return this.right; 
+            case (this.up): return this.down; 
+            case (this.down): return this.up; 
+            default: throw Error("Some shit with this");
+        };
+    }
+}
 ///////////////////// Interfaces /////////////////////
 
 interface Level {
@@ -174,7 +272,7 @@ const base_delay: number = 1;
 type AnimationPromise = (() => Promise<void>);
 interface IAnimationService {
   _nextFinishId: any;
-  _animationQueue: {animation: AnimObject, time: number, finished: boolean}[];
+//   _animationQueue: {animation: AnimObject, time: number, finished: boolean}[];
   _animationFinishEvent: {callback: () => void, runTimes: number}[];
   _animationTime: number;
   _programTime: number;
@@ -188,7 +286,6 @@ interface IAnimationService {
   isAnimationInProgress(): boolean
 
   moveClock(times?: number): number;
-  add(animation: AnimObject, relativeTime?: number): void;
 
   subscribeTimeEqulibrium(observer: () => void, runTime?: number): void;
   clearSubscriptions(): void;
@@ -200,11 +297,7 @@ interface IAnimationService {
   _animationQueue_v2: {animation: AnimationPromise, time: number, finished: boolean}[];
 }
 
-// TODO:: Build logic to controll animate
-
-
 const animationService : IAnimationService = {
-  _animationQueue: [],
   _animationQueue_v2: [],
   _animationTime: 0,
   _animationFinishEvent: [],
@@ -212,14 +305,6 @@ const animationService : IAnimationService = {
   _programTime: 0,
   _iterval: null,
   _animationInProgress: false,
-
-  add(animation: AnimObject, relativeTime: number = base_delay) {
-    this._animationQueue.unshift({
-      time: this._programTime + relativeTime,
-      animation,
-      finished: false
-    });
-  },
 
   add_v2(animation:AnimationPromise, relativeTime: number = base_delay) {
     this._animationQueue_v2.unshift({
@@ -301,10 +386,8 @@ const animationService : IAnimationService = {
     this._animationFinishEvent.push(obj);
   },
 
-  // For better handling
-  // clearSubscription(id: number) {
-
-  // },
+  // For better subscription handling
+  // clearSubscription(id: number)
   clearSubscriptions() {
     this._animationFinishEvent.splice(0);
   },
@@ -352,11 +435,11 @@ const soundService: SoundService = {
         const background = new Audio(this._basepath + 'background.mp3');
         this._bg = background;
         this._pop1 = new Audio(this._basepath + 'pop_3.mp3');
-        this._pop2 = new Audio(this._basepath + 'pop_2.wav');
+        // this._pop2 = new Audio(this._basepath + 'pop_2.wav');
         
         let sounds = $('<div></div>');
 
-        sounds.append(this._bg, this._pop1, this._pop2);
+        sounds.append(this._bg, this._pop1); //, this._pop2);
         sounds.appendTo($('body'));
     },
 
@@ -534,11 +617,7 @@ const lvlEndPopUp = (score: number, uname: string = '') => {
 
 }
 
-const difficulties = {
-    medium: 'medium',
-    easy: 'easy',
-    hard: 'hard',
-};
+
 const difficultyService = {
     currentDifficulty: difficulties.medium,
     setupDifficulty(diff: string) {
@@ -552,6 +631,7 @@ const difficultyService = {
         $(`#${diff}`).addClass('active');
 
         this.currentDifficulty = diff;
+        lvlService.restart();
     },
 
     changeDifficulty(diff: string) {
@@ -670,6 +750,9 @@ const lvlService = {
      * @param actionButtons Every button except the cancel ;
      */
     changeDurringGame(actionButtons: {text: string, onClick:() => void}[]) {
+        if ($('.popup').length != 0) {
+            return;
+        }
         const onClick = () => {
             popup.remove();
         };
@@ -728,23 +811,19 @@ const lvlService = {
     
     setupMap(mapId: number){
     
-        // for new map gen // Always needed
         clearCurrentMap();
     
-        // If new map gen
         //@ts-ignore
         lvl = levels.find(e => e.id == mapId);
         $('#mapId').text(lvl.id);
         $('#goal-score').text(lvl.score);
     
-        tile_size = game_area_height / lvl.m;
+        tile_size = game_area_height / Math.max(lvl.m, lvl.n);
         candy_size = tile_size * candy_to_tile;
         
-    
         this.generateTiles(lvl.n, lvl.m);
-        generateObstacles();
+        // generateObstacles();
     
-        // Before start
         this.fillTiles();
         scoreService.resetScore();
         stepService.setStartSteps(lvl.steps);
@@ -813,8 +892,6 @@ const lvlService = {
                     html: html_tile
                 };
     
-                // html_tile.on('click', (e) => console.log(tile));
-    
                 add_mouse_envets(tile);
     
                 tile.html.appendTo(game_area);
@@ -827,107 +904,10 @@ const lvlService = {
 }
 
 ////
-const purple = 'purple';
-const green = 'green';
-const yellow = 'yellow';
-const red = 'red';
-const blue = 'blue';
-const special = 'special';
-
-let activeCandies: number = 4;
-
-const tile_types = {
-    normal: "normal",
-    void: "void",
-}
-
-const candy_types = {
-    purple,
-    green,
-    yellow,
-    red,
-    blue,
-
-    special,
-    void: "void",
-
-    formNumber: (n: number): string => {
-        switch (n){
-            case 0: return candy_types.purple;
-            case 1: return candy_types.yellow;
-            case 2: return candy_types.red;
-            case 3: return candy_types.green;
-            case 4: return candy_types.blue;
-            default: return "Error";
-        }
-    },
-    randomType(): string {
-        return this.formNumber(Math.floor(Math.random() * activeCandies));
-    }
-};
-
-const direction = {
-    left: 0,
-    right: 1,
-    up: 2,
-    down: 3,
-    getDirection(x1: number, x2: number, y1: number, y2: number): number {
-        return x1 == x2 ? (y2 > y1 ? this.down : this.up)  
-                        : (x2 > x1 ? this.right : this.left);
-    },
-    fromVector(x: number, y: number): number {
-        return x == 0 ? ( y > 0 ? this.down : this.up )
-                      : ( x > 0 ? this.right : this.left );
-    },
-    getReverse(direct: number): number {
-        switch (direct){
-            case (this.right): return this.left; 
-            case (this.left): return this.right; 
-            case (this.up): return this.down; 
-            case (this.down): return this.up; 
-            default: throw Error("Some shit with this");
-        };
-    }
-}
-
-
-
-let game_area: JQuery<HTMLElement>;
-let game_area_height: number;
-
-let left_start;
-let top_start;
-
-let tiles: Tile[] = [];
-let tiles_structured: Tile[][] = [];
-let candies_structured: Candy[][] = [];
-const d_num = 3;
-const sepcial_mark = 4;
-
 
 const get_candy_form_tile = (tile: Tile) => {
     candies_structured[tile.pos.x][tile.pos.y];
 };
-
-
-let selected_tile: Tile | null = null; 
-let is_tile_selected = false;
-let mouse_is_down = true;
-let ableToMove = true;
-
-let refill_active = false;
-let username = '';
-let highest_completed_level = 0;
-
-
-
-let scores: {[mapId: number]: TopListScore[]} = {};
-
-let tile_size: number;
-let candy_size: number;
-// Candy to Tile ration 
-let candy_to_tile =  4 / 5;
-let fall_animation_time = 400; 
 
 const generateCandy = (pos: Pos, fall: boolean = false, type?: string): Candy =>  {
     let html = $('<div class="candy"></div>');
@@ -979,6 +959,9 @@ $(() => {
 
     addControll();
     
+    lvlService.init();
+    lvlService.setupMap(levels.reduce((a,b)=> a.id < b.id ? a : b).id);
+    
     scoreService.subscribeScoreChange((score: number) => $('#score').text(score));
     stepService.subscribeStepChange((steps: number) => $('#left-moves').text(steps));
     stepService.subscribeOnZeroSteps(() => {
@@ -987,17 +970,15 @@ $(() => {
 
     setupDifficultyHandling();
 
-
     animationService.subscribeTimeEqulibrium(() => ableToMove = true);
     
-    lvlService.init();
-    lvlService.setupMap(levels.reduce((a,b)=> a.id < b.id ? a : b).id);
     topListService.init();
-
     soundService.init();
 
-    $('#background').on('click', e => e.target.childNodes[1].textContent = soundService.toggleBackground() ? "On" : "Off");
-    $('#effects').on('click', e => e.target.childNodes[1].textContent = soundService.toggleEffects() ? "On" : "Off");
+    // $('#background').on('click', e => e.target.childNodes[1].textContent = soundService.toggleBackground() ? "On" : "Off");
+    // $('#effects').on('click', e => e.target.childNodes[1].textContent = soundService.toggleEffects() ? "On" : "Off");
+    $('#background').on('click', () => $('#background span')[0].innerText = soundService.toggleBackground() ? "On" : "Off");
+    $('#effects').on('click', () => $('#effects span')[0].innerText = soundService.toggleEffects() ? "On" : "Off");
     $('#startbackgroundMuscik').on('click', () => soundService.startBackroundMusick());
 
 });
@@ -1016,11 +997,10 @@ const clearCurrentMap = () => {
     candies_structured.splice(0);
 };
 
+// This should work fine.. 
 const generateObstacles = () => {
 
 };
-
-
 
 const mouseDown = (pos: Pos) => {
     selected_tile = tiles_structured[pos.x][pos.y];
@@ -1050,7 +1030,6 @@ const mouseOver = (pos: Pos) => {
     }
 
     let other_tile = tiles_structured[selected_x + diff_x][selected_y + diff_y];
-    let direct = direction.fromVector(diff_x, diff_y);
     
     if (other_tile.type == tile_types.normal) {
         move_elements(selected_tile, other_tile, direction.fromVector(diff_x, diff_y)); 
@@ -1098,10 +1077,9 @@ const animateSwap = (first: JQuery<HTMLElement>, second: JQuery<HTMLElement>, di
     }));
 
     animationService.moveClock();
-
-
 }
 
+// Swap to elements in the array
 const swap = (first: Candy, second: Candy, direct: number) => {
 
     if (direct == direction.left || direct == direction.right) {
@@ -1110,11 +1088,11 @@ const swap = (first: Candy, second: Candy, direct: number) => {
 
         //@ts-ignore
         candies_structured[first.pos.x].push(candies_structured[second.pos.x].splice(y, 1, temp.shift()).pop());
-        candies_structured[first.pos.x].push(...temp)
+        candies_structured[first.pos.x].push(...temp);
+
     } else {
         let list = candies_structured[first.pos.x];
         let lower = Math.min(first.pos.y, second.pos.y);
-        let higher = Math.max(first.pos.y, second.pos.y);
         let temp = list.splice(lower);
 
         //@ts-ignore
@@ -1125,10 +1103,11 @@ const swap = (first: Candy, second: Candy, direct: number) => {
     let tmp = {...first.pos}
     first.pos = {...second.pos}
     second.pos = tmp;
+
     animateSwap(first.html, second.html, direct);
 }
 
-
+// Handle the swap motion
 const move_elements = async (one: Tile, other: Tile, direct: number) => {
     if (one.type == tile_types.void || other.type == tile_types.void || !ableToMove) { return; }
     ableToMove = false;
@@ -1153,6 +1132,7 @@ const move_elements = async (one: Tile, other: Tile, direct: number) => {
     }
 }
 
+// Checks if there are 3 or more same type in a row
 const marker_row = (pos: Pos, candy_type: string): number => {
     let candies = [candies_structured[pos.x][pos.y]];
 
@@ -1191,6 +1171,7 @@ const marker_row = (pos: Pos, candy_type: string): number => {
     return candies.length >=  3 ? candies.length : 0;  
 }
 
+// Checks if there are 3 or more same type in a column
 const marker_column = (pos: Pos, candy_type:string): number => {
     let candies = [candies_structured[pos.x][pos.y]];
 
@@ -1243,6 +1224,7 @@ const turn_to_special = (candy: Candy) => {
     candy.mark = false;
 }
 
+// On moving the special candy
 const explosion = (position: Pos): number =>  {
     let exploded = 0;
     for (let x = position.x - 1; x <= position.x + 1; x++){
@@ -1273,8 +1255,8 @@ const marker = (candy_pos: Pos, type: string): number => {
         marks = explosion(candy_pos);
     } else {
         let marks1 = marker_row(candy_pos, type);
-        let marks2 = marker_column(candy_pos, type);
 
+        let marks2 = marker_column(candy_pos, type);
 
         marks = marks1 + marks2; 
         
@@ -1287,6 +1269,7 @@ const marker = (candy_pos: Pos, type: string): number => {
     return marks;
 }
 
+// Clear, regenerate candies; handle the fall
 const remove = () => {
     // y refers to from
     const refill = (col: Candy[], y: number, candies: Candy[]) => {
@@ -1368,6 +1351,7 @@ const remove = () => {
     detectMatches(min_x, max_y);
 }
 
+// Detect for three in a row && column after swaping
 const detectMatches = (start_x: number, end_y: number) => {
 
     // Todo :: lvl.n vs candies_structured.length
@@ -1397,7 +1381,6 @@ const detectMatches = (start_x: number, end_y: number) => {
 
 }
 
-
 const animateFall = (candy: Candy, fall: number, anim_delay: number = base_delay) => {
 
     parseInt(candy.html.css('top'));
@@ -1407,8 +1390,7 @@ const animateFall = (candy: Candy, fall: number, anim_delay: number = base_delay
             ), anim_delay);
 }
 
-// Fall effect
-// animati
+// Regenerate candies at the specific position
 const fallRefill = (x: number, y: number, amount: number = 1, animation_delay: number = base_delay): Candy[] => {
     let created_candies: Candy[] = [];
         
@@ -1427,11 +1409,6 @@ const fallRefill = (x: number, y: number, amount: number = 1, animation_delay: n
                 candy.html.animate({top: `+=${(amount - i) * tile_size}`}, fall_animation_time, () => resolve())
             }, fall_animation_time * i);
         }), animation_delay);
-
-        
-        // setTimeout(()=> candy.html.animate({
-        //     top: `+=${(amount - i) * tile_size}`
-        // }, fall_animation_time), fall_animation_time * i);
     }
 
     return created_candies;

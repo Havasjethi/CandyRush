@@ -8,7 +8,90 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-///////////////////// Interfaces /////////////////////
+let game_area;
+let game_area_height;
+let left_start;
+let top_start;
+let tiles = [];
+let tiles_structured = [];
+let candies_structured = [];
+const d_num = 3;
+const sepcial_mark = 4;
+let selected_tile = null;
+let is_tile_selected = false;
+let mouse_is_down = true;
+let ableToMove = true;
+let refill_active = false;
+let username = '';
+let highest_completed_level = 0;
+let scores = {};
+let tile_size;
+let candy_size;
+// Candy to Tile ration 
+let candy_to_tile = 4 / 5;
+let fall_animation_time = 400;
+const difficulties = {
+    medium: 'medium',
+    easy: 'easy',
+    hard: 'hard',
+};
+const purple = 'purple';
+const green = 'green';
+const yellow = 'yellow';
+const red = 'red';
+const blue = 'blue';
+const special = 'special';
+let activeCandies = 4;
+const tile_types = {
+    normal: "normal",
+    void: "void",
+};
+const candy_types = {
+    purple,
+    green,
+    yellow,
+    red,
+    blue,
+    special,
+    void: "void",
+    formNumber: (n) => {
+        switch (n) {
+            case 0: return candy_types.purple;
+            case 1: return candy_types.yellow;
+            case 2: return candy_types.red;
+            case 3: return candy_types.green;
+            case 4: return candy_types.blue;
+            default: return "Error";
+        }
+    },
+    randomType() {
+        return this.formNumber(Math.floor(Math.random() * activeCandies));
+    }
+};
+const direction = {
+    left: 0,
+    right: 1,
+    up: 2,
+    down: 3,
+    getDirection(x1, x2, y1, y2) {
+        return x1 == x2 ? (y2 > y1 ? this.down : this.up)
+            : (x2 > x1 ? this.right : this.left);
+    },
+    fromVector(x, y) {
+        return x == 0 ? (y > 0 ? this.down : this.up)
+            : (x > 0 ? this.right : this.left);
+    },
+    getReverse(direct) {
+        switch (direct) {
+            case (this.right): return this.left;
+            case (this.left): return this.right;
+            case (this.up): return this.down;
+            case (this.down): return this.up;
+            default: throw Error("Some shit with this");
+        }
+        ;
+    }
+};
 ;
 ;
 const scoreService = {
@@ -90,9 +173,7 @@ const stepService = {
     }
 };
 const base_delay = 1;
-// TODO:: Build logic to controll animate
 const animationService = {
-    _animationQueue: [],
     _animationQueue_v2: [],
     _animationTime: 0,
     _animationFinishEvent: [],
@@ -100,13 +181,6 @@ const animationService = {
     _programTime: 0,
     _iterval: null,
     _animationInProgress: false,
-    add(animation, relativeTime = base_delay) {
-        this._animationQueue.unshift({
-            time: this._programTime + relativeTime,
-            animation,
-            finished: false
-        });
-    },
     add_v2(animation, relativeTime = base_delay) {
         this._animationQueue_v2.unshift({
             time: this._programTime + relativeTime,
@@ -173,9 +247,8 @@ const animationService = {
         const obj = { runTimes, callback: observer };
         this._animationFinishEvent.push(obj);
     },
-    // For better handling
-    // clearSubscription(id: number) {
-    // },
+    // For better subscription handling
+    // clearSubscription(id: number)
     clearSubscriptions() {
         this._animationFinishEvent.splice(0);
     },
@@ -199,9 +272,9 @@ const soundService = {
         const background = new Audio(this._basepath + 'background.mp3');
         this._bg = background;
         this._pop1 = new Audio(this._basepath + 'pop_3.mp3');
-        this._pop2 = new Audio(this._basepath + 'pop_2.wav');
+        // this._pop2 = new Audio(this._basepath + 'pop_2.wav');
         let sounds = $('<div></div>');
-        sounds.append(this._bg, this._pop1, this._pop2);
+        sounds.append(this._bg, this._pop1); //, this._pop2);
         sounds.appendTo($('body'));
     },
     startBackroundMusick() {
@@ -336,11 +409,6 @@ const lvlEndPopUp = (score, uname = '') => {
     popup.append(upper, buttons);
     popup.appendTo($('.game'));
 };
-const difficulties = {
-    medium: 'medium',
-    easy: 'easy',
-    hard: 'hard',
-};
 const difficultyService = {
     currentDifficulty: difficulties.medium,
     setupDifficulty(diff) {
@@ -359,6 +427,7 @@ const difficultyService = {
         $(`#${this.currentDifficulty}`).removeClass('active');
         $(`#${diff}`).addClass('active');
         this.currentDifficulty = diff;
+        lvlService.restart();
     },
     changeDifficulty(diff) {
         if (stepService._maxSteps != stepService._steps) {
@@ -465,6 +534,9 @@ const lvlService = {
      * @param actionButtons Every button except the cancel ;
      */
     changeDurringGame(actionButtons) {
+        if ($('.popup').length != 0) {
+            return;
+        }
         const onClick = () => {
             popup.remove();
         };
@@ -508,18 +580,15 @@ const lvlService = {
         this.fillTiles();
     },
     setupMap(mapId) {
-        // for new map gen // Always needed
         clearCurrentMap();
-        // If new map gen
         //@ts-ignore
         lvl = levels.find(e => e.id == mapId);
         $('#mapId').text(lvl.id);
         $('#goal-score').text(lvl.score);
-        tile_size = game_area_height / lvl.m;
+        tile_size = game_area_height / Math.max(lvl.m, lvl.n);
         candy_size = tile_size * candy_to_tile;
         this.generateTiles(lvl.n, lvl.m);
-        generateObstacles();
-        // Before start
+        // generateObstacles();
         this.fillTiles();
         scoreService.resetScore();
         stepService.setStartSteps(lvl.steps);
@@ -578,7 +647,6 @@ const lvlService = {
                     type: tile_types.normal,
                     html: html_tile
                 };
-                // html_tile.on('click', (e) => console.log(tile));
                 add_mouse_envets(tile);
                 tile.html.appendTo(game_area);
                 col.push(tile);
@@ -589,88 +657,9 @@ const lvlService = {
     }
 };
 ////
-const purple = 'purple';
-const green = 'green';
-const yellow = 'yellow';
-const red = 'red';
-const blue = 'blue';
-const special = 'special';
-let activeCandies = 4;
-const tile_types = {
-    normal: "normal",
-    void: "void",
-};
-const candy_types = {
-    purple,
-    green,
-    yellow,
-    red,
-    blue,
-    special,
-    void: "void",
-    formNumber: (n) => {
-        switch (n) {
-            case 0: return candy_types.purple;
-            case 1: return candy_types.yellow;
-            case 2: return candy_types.red;
-            case 3: return candy_types.green;
-            case 4: return candy_types.blue;
-            default: return "Error";
-        }
-    },
-    randomType() {
-        return this.formNumber(Math.floor(Math.random() * activeCandies));
-    }
-};
-const direction = {
-    left: 0,
-    right: 1,
-    up: 2,
-    down: 3,
-    getDirection(x1, x2, y1, y2) {
-        return x1 == x2 ? (y2 > y1 ? this.down : this.up)
-            : (x2 > x1 ? this.right : this.left);
-    },
-    fromVector(x, y) {
-        return x == 0 ? (y > 0 ? this.down : this.up)
-            : (x > 0 ? this.right : this.left);
-    },
-    getReverse(direct) {
-        switch (direct) {
-            case (this.right): return this.left;
-            case (this.left): return this.right;
-            case (this.up): return this.down;
-            case (this.down): return this.up;
-            default: throw Error("Some shit with this");
-        }
-        ;
-    }
-};
-let game_area;
-let game_area_height;
-let left_start;
-let top_start;
-let tiles = [];
-let tiles_structured = [];
-let candies_structured = [];
-const d_num = 3;
-const sepcial_mark = 4;
 const get_candy_form_tile = (tile) => {
     candies_structured[tile.pos.x][tile.pos.y];
 };
-let selected_tile = null;
-let is_tile_selected = false;
-let mouse_is_down = true;
-let ableToMove = true;
-let refill_active = false;
-let username = '';
-let highest_completed_level = 0;
-let scores = {};
-let tile_size;
-let candy_size;
-// Candy to Tile ration 
-let candy_to_tile = 4 / 5;
-let fall_animation_time = 400;
 const generateCandy = (pos, fall = false, type) => {
     let html = $('<div class="candy"></div>');
     let candy = {
@@ -708,6 +697,8 @@ $(() => {
     game_area_height = parseInt(game_area.css('height'));
     levels.forEach(e => scores[e.id] = []);
     addControll();
+    lvlService.init();
+    lvlService.setupMap(levels.reduce((a, b) => a.id < b.id ? a : b).id);
     scoreService.subscribeScoreChange((score) => $('#score').text(score));
     stepService.subscribeStepChange((steps) => $('#left-moves').text(steps));
     stepService.subscribeOnZeroSteps(() => {
@@ -715,12 +706,12 @@ $(() => {
     });
     setupDifficultyHandling();
     animationService.subscribeTimeEqulibrium(() => ableToMove = true);
-    lvlService.init();
-    lvlService.setupMap(levels.reduce((a, b) => a.id < b.id ? a : b).id);
     topListService.init();
     soundService.init();
-    $('#background').on('click', e => e.target.childNodes[1].textContent = soundService.toggleBackground() ? "On" : "Off");
-    $('#effects').on('click', e => e.target.childNodes[1].textContent = soundService.toggleEffects() ? "On" : "Off");
+    // $('#background').on('click', e => e.target.childNodes[1].textContent = soundService.toggleBackground() ? "On" : "Off");
+    // $('#effects').on('click', e => e.target.childNodes[1].textContent = soundService.toggleEffects() ? "On" : "Off");
+    $('#background').on('click', () => $('#background span')[0].innerText = soundService.toggleBackground() ? "On" : "Off");
+    $('#effects').on('click', () => $('#effects span')[0].innerText = soundService.toggleEffects() ? "On" : "Off");
     $('#startbackgroundMuscik').on('click', () => soundService.startBackroundMusick());
 });
 // const initMap();
@@ -735,6 +726,7 @@ const clearCurrentMap = () => {
     tiles_structured.splice(0);
     candies_structured.splice(0);
 };
+// This should work fine.. 
 const generateObstacles = () => {
 };
 const mouseDown = (pos) => {
@@ -762,7 +754,6 @@ const mouseOver = (pos) => {
         diff_x = 0;
     }
     let other_tile = tiles_structured[selected_x + diff_x][selected_y + diff_y];
-    let direct = direction.fromVector(diff_x, diff_y);
     if (other_tile.type == tile_types.normal) {
         move_elements(selected_tile, other_tile, direction.fromVector(diff_x, diff_y));
         selected_tile = null;
@@ -813,6 +804,7 @@ const animateSwap = (first, second, direct) => {
     }));
     animationService.moveClock();
 };
+// Swap to elements in the array
 const swap = (first, second, direct) => {
     if (direct == direction.left || direct == direction.right) {
         let y = first.pos.y;
@@ -824,7 +816,6 @@ const swap = (first, second, direct) => {
     else {
         let list = candies_structured[first.pos.x];
         let lower = Math.min(first.pos.y, second.pos.y);
-        let higher = Math.max(first.pos.y, second.pos.y);
         let temp = list.splice(lower);
         //@ts-ignore
         list.push(temp.splice(1, 1).pop());
@@ -835,6 +826,7 @@ const swap = (first, second, direct) => {
     second.pos = tmp;
     animateSwap(first.html, second.html, direct);
 };
+// Handle the swap motion
 const move_elements = (one, other, direct) => __awaiter(void 0, void 0, void 0, function* () {
     if (one.type == tile_types.void || other.type == tile_types.void || !ableToMove) {
         return;
@@ -856,6 +848,7 @@ const move_elements = (one, other, direct) => __awaiter(void 0, void 0, void 0, 
         remove();
     }
 });
+// Checks if there are 3 or more same type in a row
 const marker_row = (pos, candy_type) => {
     let candies = [candies_structured[pos.x][pos.y]];
     if (pos.x < lvl.n) {
@@ -891,6 +884,7 @@ const marker_row = (pos, candy_type) => {
     }
     return candies.length >= 3 ? candies.length : 0;
 };
+// Checks if there are 3 or more same type in a column
 const marker_column = (pos, candy_type) => {
     let candies = [candies_structured[pos.x][pos.y]];
     if (pos.y < lvl.m) {
@@ -936,6 +930,7 @@ const turn_to_special = (candy) => {
     }));
     candy.mark = false;
 };
+// On moving the special candy
 const explosion = (position) => {
     let exploded = 0;
     for (let x = position.x - 1; x <= position.x + 1; x++) {
@@ -972,6 +967,7 @@ const marker = (candy_pos, type) => {
     }
     return marks;
 };
+// Clear, regenerate candies; handle the fall
 const remove = () => {
     // y refers to from
     const refill = (col, y, candies) => {
@@ -1038,6 +1034,7 @@ const remove = () => {
     animationService.moveClock(2);
     detectMatches(min_x, max_y);
 };
+// Detect for three in a row && column after swaping
 const detectMatches = (start_x, end_y) => {
     // Todo :: lvl.n vs candies_structured.length
     let marks = 0;
@@ -1062,8 +1059,7 @@ const animateFall = (candy, fall, anim_delay = base_delay) => {
     parseInt(candy.html.css('top'));
     animationService.add_v2(() => new Promise(resolve => candy.html.animate({ top: `+=${fall * tile_size}` }, fall_animation_time, () => resolve())), anim_delay);
 };
-// Fall effect
-// animati
+// Regenerate candies at the specific position
 const fallRefill = (x, y, amount = 1, animation_delay = base_delay) => {
     let created_candies = [];
     for (let i = 0; i < amount; i++) {
@@ -1079,9 +1075,6 @@ const fallRefill = (x, y, amount = 1, animation_delay = base_delay) => {
                 candy.html.animate({ top: `+=${(amount - i) * tile_size}` }, fall_animation_time, () => resolve());
             }, fall_animation_time * i);
         }), animation_delay);
-        // setTimeout(()=> candy.html.animate({
-        //     top: `+=${(amount - i) * tile_size}`
-        // }, fall_animation_time), fall_animation_time * i);
     }
     return created_candies;
 };
